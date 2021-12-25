@@ -9,11 +9,9 @@ Statistical analysis and visualization on United States Wind Turbine Data. Our g
 
 This project was done in collaboration with:
 
-Sean Birch (sbirch@andrew.cmu.edu)
-
-Xiaohan Liu (xiaohanliu@cmu.edu)
-
-Alan Zhu (yixuanz2@andrew.cmu.edu)
++ Sean Birch (sbirch@andrew.cmu.edu)
++ Xiaohan Liu (xiaohanliu@cmu.edu)
++ Alan Zhu (yixuanz2@andrew.cmu.edu)
 
 
 ## Preview of Graphs Used :
