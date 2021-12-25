@@ -1,4 +1,12 @@
-# Wind Turbine Analysis
+# United States Wind Turbine Analysis
+
+This project was done in collaboration with:
+
++ Sean Birch (sbirch@andrew.cmu.edu)
++ Xiaohan Liu (xiaohanliu@cmu.edu)
++ Alan Zhu (yixuanz2@andrew.cmu.edu)
+
+## Project Description 
 
 Statistical analysis and visualization on United States Wind Turbine Data. Our goal is to answer the questions:
 
@@ -7,12 +15,11 @@ Statistical analysis and visualization on United States Wind Turbine Data. Our g
 3. Are there seasonal trends by state or region?
 4. Are there significant increases in megawatt production with retrofitting?
 
-This project was done in collaboration with:
+## File Description:
 
-+ Sean Birch (sbirch@andrew.cmu.edu)
-+ Xiaohan Liu (xiaohanliu@cmu.edu)
-+ Alan Zhu (yixuanz2@andrew.cmu.edu)
-
++ Wind Turbine Report.pdf: A full report containing all of our statistical analyses and findings. Further details about our dataset used and sources can be found here. 
++ Wind Turbine Abridged Report.html: Contains a shortened version of our .pdf report.
++ Turbine_Final.rmd: Contains the source code used to construct the graphs shown in our report. 
 
 ## Preview of Graphs Used :
 
