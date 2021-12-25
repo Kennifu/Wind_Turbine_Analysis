@@ -8,11 +8,8 @@ Statistical analysis and visualization on United States Wind Turbine Data. Our g
 4. Are there significant increases in megawatt production with retrofitting?
 
 This project was done in collaboration with:
-
 Sean Birch (sbirch@andrew.cmu.edu)
-
 Xiaohan Liu (xiaohanliu@cmu.edu)
-
 Alan Zhu (yixuanz2@andrew.cmu.edu)
 
 
