@@ -1,0 +1,429 @@
+---
+title: "An Analysis of Wind Farms in the Contiguous United States"
+author: "Sean J. Birch, Kenneth Huang, Alan Zhu, Xiaohan Liu"
+date: "12/4/2021"
+output:
+  html_document:
+    code_folding: show
+    theme: cosmo
+    toc: yes
+    toc_float: yes
+  bookdown::html_document2:
+  word_document:
+    toc: yes
+  pdf_document:
+    toc: yes
+optin: TRUE
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r include=FALSE}
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(readxl)
+library(ggbiplot)
+library(viridis)
+library(lubridate)
+library(GGally)
+library(stargazer)
+library(dendextend)
+```
+
+```{r include=FALSE}
+# data import
+NEW_annual_production <- read_excel("NEW_annual_production.xlsx")
+NEW_monthly_production <- read_excel("NEW_monthly_production.xlsx")
+project_level <- read_excel("project_level.xlsx")
+project_level$lat <- as.numeric(project_level$lat)
+project_level$lon <- as.numeric(project_level$lon)
+USGS_Turbine_Data <- read_excel("USGS_Turbine_Data.xlsx")
+turbine_model <- read_excel("turbine_model.xlsx") %>% 
+  na.omit()
+```
+
+```{r include=FALSE}
+library(sp)
+library(ggmap)
+library(maps)
+us_data <- map_data("state")
+```
+
+# Data Description
+
+Data was gathered from eia (Energy Information Administration) and USGS (United States Geological Survey) APIs (Application Programming Interfaces), and combined into a dataset. The data was filtered to contain only wind farms and turbines located in the contiguous United States. Variables utilized from USGS include latitude, longitude, elevation, retrofit status, and year retrofitted. Variables utilized from eia include wind farm megawatt production, geographic region, and wind farm capacity.
+
+# Research Questions
+
+This project asks the questions:  
+
+1.  What is the landscape of wind farms and turbines for the contiguous United States?
+
+2.  What is the landscape of megawatt production across the contiguous United states?
+
+3.  Are there seasonal trends by state or region?
+
+4.  Are there significant increases in megawatt production with retrofitting?
+
+## Research Question 1
+
+To investigate the landscape of wind farms in the contiguous United States, a heat map was constructed showing wind turbine locations.
+
+```{r echo=FALSE}
+USGS.subset <- USGS_Turbine_Data %>% 
+  subset(t_state != "AK" & t_state != "HI" & t_state != "PR" & t_state != "GU")
+
+ggplot(USGS.subset, aes(x = lon, y = lat)) + 
+  stat_density2d(aes(fill = ..density..), geom = "tile", contour = F) + 
+  geom_polygon(aes(long, lat, group = group), fill = "NA", color = 'white', 
+               data = us_data)+
+  scale_fill_viridis(option = "magma")+
+  theme_void()+
+  theme(legend.position = "none")+
+  ggtitle("Heatmap of US Mainland Turbines")+
+  coord_map("mercator")+
+  labs(caption = "Source: USGS")+
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+This map shows a large concentration of wind turbines in California (CA) and Texas (TX) with a smaller, though still noticeable concentration at the borders, of Minnesota, Iowa, South Dakota, and Nebraska; a smaller concentration at the borders of Illinois and Indiana as well as the borders of Washington and Oregon; and an even smaller concentration in Wyoming and Colorado.
+
+As turbines rely heavily on wind currents, and one would expect these currents to vary with elevation, a histogram showing the distribution of turbine elevation on the density scale was constructed.
+
+```{r echo=FALSE, warning=FALSE}
+ggplot(USGS_Turbine_Data, aes(x = elevation_m))+
+  geom_histogram(aes(y = ..density..), fill = "cyan4", color = "cyan2", bins = 30)+
+  theme_light()+
+  
+  # geom_vline(aes(xintercept = 131), color = "aquamarine4")+ # Dallas
+  # geom_text(aes(x=131, label="Dallas TX", y=0.001),
+  #           colour="aquamarine4",
+  #           angle=90, vjust = 1.2, text=element_text(size=5))+
+  
+  # geom_vline(aes(xintercept = 372.8), color = "aquamarine2")+ # Pittsburgh
+  # geom_text(aes(x=372.8, label="Pittsburgh PA", y=0.001),
+  #           colour="aquamarine2",
+  #           angle=90, vjust = 1.2, text=element_text(size=5))+
+  
+  ggtitle("Distribution of Turbine Elevation")+
+  labs(y = "Density", 
+       x = "Elevation (Meters)",
+       caption = "Source: USGS")+
+  theme(axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
+
+# ks.test(x = USGS_Turbine_Data$elevation_m, y = "pnorm", mean = mean(USGS_Turbine_Data$elevation_m, na.rm = TRUE), sd = sd(USGS_Turbine_Data$elevation_m, na.rm = TRUE))
+```
+
+This histogram shows that few turbines are installed at sea level. The data is right skewed, indicating that most turbines are higher than sea level, but not particularly high, with a mean and median of 687 m and 561m, respectively. The peak of the density closely matches the elevation of Pittsburgh (372.8 m). Most turbines are located at elevations higher than Los Angeles, CA (93 m) and Dallas, TX (131 m). A KS test returns a p value of approximately zero, and we can, therefore, reject the null hypothesis and conclude that the histogram does not follow a normal distribution.
+
+## Research Question 2
+
+```{r include=FALSE}
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(readxl)
+library(ggbiplot)
+library(viridis)
+library(lubridate)
+library(GGally)
+library(stargazer)
+library(dendextend)
+library(ggseas)
+```
+
+```{r include=FALSE}
+# data import
+NEW_annual_production <- read_excel("NEW_annual_production.xlsx")
+NEW_monthly_production <- read_excel("NEW_monthly_production.xlsx")
+project_level <- read_excel("project_level.xlsx")
+project_level$lat <- as.numeric(project_level$lat)
+project_level$lon <- as.numeric(project_level$lon)
+USGS_Turbine_Data <- read_excel("USGS_Turbine_Data.xlsx")
+turbine_model <- read_excel("turbine_model.xlsx") %>% 
+  na.omit()
+```
+
+We want to further investigate the time series data between California and Texas, and motivate whether their trends apply to all turbine locations.
+
+In particular, we are researching: Do different areas of the United States follow the same trends for megawatt production? If not, what seasonality trends can we find out about each state?
+
+```{r include=FALSE}
+NEW_monthly_production <- read_excel("NEW_monthly_production.xlsx")
+
+NEW_monthly_production$Month_MW_n <- match(NEW_monthly_production$Month_MW,month.abb)
+NEW_monthly_production$day <- 1
+
+NEW_monthly_production <- NEW_monthly_production %>%
+  mutate(date = make_date(year_MW, Month_MW_n, day)) %>% 
+  dplyr::select(eia_id, date, MW_Prod) %>% 
+  right_join(
+    dplyr::select(project_level, c("eia_id", "plant_state"))
+  )
+
+production <- NEW_monthly_production %>% 
+  na.omit() %>% 
+  subset(plant_state == "TX" | plant_state == "CA") %>% 
+  group_by(date, plant_state) %>% 
+  dplyr::summarise(Prod_SUM = mean(MW_Prod))
+```
+
+```{r echo=FALSE}
+ggplot(production)+
+  geom_line(aes(x = date, y = Prod_SUM, color = plant_state))+
+  theme_light()+
+  ggtitle("Average Monthly Windfarm Megawatt Production")+
+  labs(y = "Average Megawatt Production", 
+       x = quote(NULL),
+       color = quote(NULL),
+       subtitle = "For Texas and California",
+       caption = "Source: EIA")+
+  theme(legend.position = "top", plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))+
+  scale_color_manual(values=c("dodgerblue2", "firebrick3"))
+```
+
+We notice that across all time periods, Texas consistently outperforms California in megawatt production. However, their trends appear to be fairly similar, where each state's peaks and troughs occur around the same time. 
+
+Let's create a seasonal decomposition graph of this dataset to explore their seasonal trends. More particularly, we will separate the two lines by plant state locations. 
+
+```{r, echo = FALSE}
+ggsdc(data = production, aes(x = date, y = Prod_SUM, color = plant_state), frequency = 12, s.window = 7) + geom_line()
+```
+
+We see that Texas and California follow similar trend patterns. However, it may be helpful to notice that the global trend of megawatt production in Texas in 2000-2005 saw a drastic increase in production compared to California. 
+
+Another difference we see is between their seasonal trends, where the trend peaks of Texas are slightly before the peaks of California. This may relate to the geographic location of the two states, which we will explore in the next section.  
+
+## Research Question 3
+
+After comparing the trends of California and Texas windfarm productions, we want to learn more about windfarm productions, and investigate which factors are related to windfarm productions.
+
+In this analysis of windfarm productions, we use the data on the annual productions in 2019 as it includes the most windfarms. First, we plot a scatterplot of the windfarm production overlayed on top of a map. 
+
+![](windfarm_production_map.png)
+
+In the plot above, the size of the circle representing each windfarm is proportional to their annual production in 2019. As we can see, the windfarms with high productions are mostly in the South, particularly the states of Texas, Oklahoma, and Kansas. Some windfarms in some northern states also have relatively high productions, namely Iowa and Illinois. In comparison, although there are many windfarms in the West (Washington, California) and the Northeast, in general they have lower productions.
+
+Aside from the state and location of the windfarms, there may be other factors that affect windfarm productions. We look at the variable `p_year`, which is the year that the turbines in the windfarm became operational and began providing power. In the side-by-side boxplots below, we grouped the year into 4 categories, as well as the states into 4 regions.
+
+![](windfarm_boxplot.png)
+
+The plot above confirms that Southern and North Central states have higher productions in 2019 than Western and Northeastern states. For Southern and North Central states, windfarms that became operational in later years have higher productions than windfarms that began operations earlier. This does not seem to be the case for Western and Northeastern states, as windfarms with different starting years seem to have a similar distribution of production.
+
+
+## Research Question 4
+
+```{r, include=FALSE}
+library(ggplot2) 
+library(dplyr) 
+library(ggmap) 
+library(ggthemes)
+library(tidyverse) 
+library(GGally)
+library(dendextend)
+library(lubridate)
+library(ggseas)
+```
+
+
+```{r, include=FALSE} 
+NEW_annual_production <- read_excel("NEW_annual_production.xlsx")
+NEW_monthly_production <- read_excel("NEW_monthly_production.xlsx")
+project_level <- read_excel("project_level.xlsx")
+project_level$lat <- as.numeric(project_level$lat)
+project_level$lon <- as.numeric(project_level$lon)
+USGS_Turbine_Data <- read_excel("USGS_Turbine_Data.xlsx")
+turbine_model <- read_excel("turbine_model.xlsx") %>% 
+  na.omit()
+
+USGS_Turbine_Data$retrofit <- as.factor(USGS_Turbine_Data$retrofit)
+```
+
+A turbine is considered **partially retrofitted** if it has undergone rotor and/or nacelle replacement or installation of other new equipment. The common goal of retrofitting is to extend the lifespan of the turbine and improve efficiency and energy production if the turbine is fitted with a larger rotor diameter. In this section of the report, we are interested in turbines that have indicated to be retrofitted to answer teh following questions: 
+
+1. Are there energy production trends of turbines that have been retrofitted? 
+
+2. Are turbines being retrofitted with equipment different from turbines that have not been retrofitted that would allow for increased energy production beyond the capabilities of their original construction? Can we observe this difference by clustering turbines by attributes such as rotor diameter, sweep area, hub height, turbine height?  
+
+### Patterns in energy production of retrofitted turbines
+
+```{r, include=FALSE}
+# grouped by region
+library(datasets)
+USGS_Turbine_Data2 <- USGS_Turbine_Data %>% drop_na(t_state)
+#states_df = data.frame(State = state.abb, Region = state.region)
+states_df = data.frame(State = state.abb, Region = state.region)
+joinedDF <- dplyr::left_join(USGS_Turbine_Data2, states_df, by=c("t_state" = "State"))
+joinedDF <- joinedDF %>% drop_na(Region)
+joinedDF$retrofit <- fct_recode(joinedDF$retrofit, "Partially Retrofitted" = "1", "Never Retrofitted" = "0") 
+
+table(joinedDF$retrofit)
+prop.table(table(joinedDF$retrofit))
+```
+
+Around 8% of the turbines in the U.S. Wind Turbine Database is known to have been partially retrofitted after the turbine was constructed by the manufacturer.  
+
+We investigate the effects on energy production of retrofitting turbines. Specifically, we are interested in whether after retrofitting, energy production increases. Out of 1167 wind farms from the dataset, 75 wind farms have retrofitted turbines. 
+
+
+To investigate changes in energy production pre and post retrofit, we chose to visualize the energy production the top six wind farms with the most retrofitted turbines. A vertical line indicates the first day of the year which turbines on the farm were retrofitted. 
+
+
+```{r time series, include=FALSE}
+retrofitTurbines <- joinedDF %>% subset(retrofit == "Partially Retrofitted")
+
+
+NEW_monthly_production$Month_MW_n <- match(NEW_monthly_production$Month_MW,month.abb)
+NEW_monthly_production$day <- 1
+
+NEW_monthly_production <- NEW_monthly_production %>%
+  mutate(date = make_date(year_MW, Month_MW_n, day)) 
+
+#bining production by wind farm to turbines that have been retrofitted 
+retrofit_farms = unique(retrofitTurbines$eia_id)
+
+sub_df <- project_level[project_level$eia_id %in% retrofit_farms,]
+
+
+# extracting wind farms with retrofitted turbines 
+sub_df_production <- NEW_monthly_production[NEW_monthly_production$eia_id %in% retrofit_farms,]
+
+sub_df_production$Month_MW_n <- match(sub_df_production$Month_MW,month.abb)
+sub_df_production$day <- 1
+
+sub_df_production <- sub_df_production %>% mutate(date = make_date(year_MW, Month_MW_n, day))
+
+sub_df_production <- mutate(sub_df_production, date = as.Date(date, format ="%m/%d/%y"))
+```
+
+
+
+```{r MGW production time series, height=15, include=FALSE, width=20}
+library(gridExtra)
+library(cowplot)
+#421 turbines retrofitted in 2017 
+rf56291_time <- ggplot(data= subset(sub_df_production, eia_id == 56291), aes(x = date, y = MW_Prod)) + 
+  geom_line(color="lightblue") +
+  labs(x = "Year", y = "Monthly Production (MW)", title = "") + #, title = "Wind Farm 56291") +
+  stat_rollapplyr(width = 12, align = "left",color="maroon") + 
+  geom_vline(xintercept = as.numeric(as.Date("2017-01-01"))) + 
+  theme_clean()
+
+
+#407 turbines retrofitted in 2017 
+rf56763_time <- ggplot(data= subset(sub_df_production, eia_id == 56763), aes(x = date, y = MW_Prod)) + 
+  geom_line(color="lightblue") +
+  labs(x = "Year", y = "Monthly Production (MW)", title = "") + #, title = "Wind Farm 56763") +
+  stat_rollapplyr(width = 12, align = "left",color="maroon") + 
+  geom_vline(xintercept = as.numeric(as.Date("2017-01-01"))) + 
+  theme_clean()
+
+
+#214 turbines retrofitted in 2018 
+rf55581_time <- ggplot(data= subset(sub_df_production, eia_id == 55581), aes(x = date, y = MW_Prod)) +
+  geom_line(color="lightblue") +
+  labs(x = "Year", y = "Monthly Production (MW)", title = "") + #, title = "Wind Farm 55581") +
+  stat_rollapplyr(width = 12, align = "left",color="maroon") + 
+  geom_vline(xintercept = as.numeric(as.Date("2018-01-01"))) + 
+  theme_clean()
+
+#ggsave("myplot.png", plot = myplot)
+
+#171/184 turbines retrofitted in 2019
+rf56501_time <- ggplot(data= subset(sub_df_production, eia_id == 56501), aes(x = date, y = MW_Prod)) + 
+  geom_line(color="lightblue") +
+  labs(x = "Year", y = "Monthly Production (MW)", title = "") + #, title = "Wind Farm 56501") +
+  stat_rollapplyr(width = 12, align = "left",color="maroon") + 
+  geom_vline(xintercept = as.numeric(as.Date("2019-01-01"))) +
+  theme_clean()
+
+#148 turbines retrofitted in 2019 
+rf56010_time <- ggplot(data= subset(sub_df_production, eia_id == 56010), aes(x = date, y = MW_Prod)) + 
+  geom_line(color="lightblue") +
+  labs(x = "Year", y = "Monthly Production (MW)", title = "") + #title = "Wind Farm 56010") +
+  stat_rollapplyr(width = 12, align = "left",color="maroon") + 
+  geom_vline(xintercept = as.numeric(as.Date("2019-01-01"))) + 
+  theme_clean()
+
+rf56097_time <- ggplot(data= subset(sub_df_production, eia_id == 56097), aes(x = date, y = MW_Prod)) + 
+  geom_line(color="lightblue") +
+  labs(x = "Year", y = "Monthly Production (MW)", title = "") + #title = "Wind Farm 56010") +
+  stat_rollapplyr(width = 12, align = "left",color="maroon") + 
+  geom_vline(xintercept = as.numeric(as.Date("2018-01-01"))) + 
+  theme_clean()
+```
+```{r echo=FALSE, warning=FALSE}
+productionTimeSeries <- plot_grid(rf56291_time, rf56763_time,rf55581_time,rf56501_time, rf56010_time, rf56097_time, labels=c("56291", "56763", "55581", "56501", "56010", "56097"),label_size = 10, ncol = 3, nrow = 2)
+
+productionTimeSeries
+ggsave("productionTimeSeries.png", productionTimeSeries, height = 5, width = 7, dpi = 320)
+
+```
+
+
+As shown by the dark line displaying a rolling average of monthly energy production, retrofit occurs after a period of decline in production and production post retrofit increases previous levels. This is suggests that retrofit is a means of prolonging turbine energy production lifespan. Our question now is whether the retrofitted new equipment is larger or more powerful than those from original construction such that retrofitted turbines may produce more energy than it's original production capacity.
+
+### Clustering turbines by physical attributes 
+
+Now we explore the physical characteristics of the retrofitted and never retrofitted turbines, specifically the quantitative variables documenting energy production capacity (t_cap), hub height (t_hh), rotor diameter (t_rd), rotor sweep area (t_rsa), and turbine total height (t_ttlh). We are interested to see if retrofitted turbines are being fitted with replacements different from never retrofitted turbines that would allow for increased energy production such as larger rotors. 
+
+```{r PCA, warning=FALSE, include=FALSE, echo=FALSE}
+joinedDF_subset <- joinedDF %>% select(-c(retrofit_year)) %>% 
+  na.omit()
+
+joinedDF[complete.cases(joinedDF[ , 14:18]),]
+retrofit_pca_subset = subset(joinedDF_subset,  select = c(t_cap, t_hh, t_rd, t_rsa, t_ttlh)) 
+retrofit_pca_subset = na.omit(retrofit_pca_subset)
+#center the columns
+retrofit_pca_subset = apply(retrofit_pca_subset, MARGIN = 2, FUN = function(x) x - mean(x))
+#standardize the columns
+retrofit_pca_subset = apply(retrofit_pca_subset, MARGIN = 2, FUN = function(x) x/sd(x))
+
+retrofit_pca = prcomp(retrofit_pca_subset)
+#summary(retrofit_pca)
+#get the "rotation" from PCA, and then compute the Gamma vectors:
+rotation_pca = as.matrix(retrofit_pca$rotation)
+#Compute Gamma vectors, which is defined as X \times rotation:
+prinComps = as.matrix(retrofit_pca_subset)%*%rotation_pca
+
+retrofit.area.colors = ifelse(joinedDF$retrofit == "Partially Retrofitted", "blue", "red")
+```
+```{r echo=FALSE, warning=FALSE}
+library(devtools)
+library(ggbiplot)
+retrofitBiplot <- ggbiplot(retrofit_pca, groups = joinedDF_subset$retrofit, alpha = 0.5)+
+  theme_clean() + 
+  labs(title = "Retrofit Biplot")
+retrofitBiplot
+ggsave("retrofitBiplot.png", retrofitBiplot, height = 5, width = 7, dpi = 320)
+
+```
+
+From the PCA plot of the first two principal components that together explain over 95% of the variation in the physical characteristics of turbines, we notice that retrofitted turbines and never retrofitted turbines are not well clustered these principal components. Specifically, the majority of partially retrofitted turbines appear to fall along an increasing line against the vectors of coefficients of the variables. From the coefficient vectors, we see the variables are highly correlated with each other, especially turbine capacity (t_cap) with rotor sweep area (t_rsa) and rotor diameter. This indicates that turbines with higher energy output capacity have larger rotors and are also taller as capacity is also highly correlated with turbine total height (t_ttlh) and turbine hub height (t_hh). 
+
+Since retrofit is not well clustered from our principal component analysis of turbine physical attributes, we suspect that retrofitted turbines' physical attributes are not very different from those turbines which have not been retrofitted. We interpret this to potentially indicate that turbines are not being retrofitted with equipment which are different from their original parts and that here may be other factors that better cluster retrofit such as the age of the turbine. 
+
+# Conclusion
+
+This project examined the location, elevation, and megawatt production of wind turbines and wind farms in the contiguous United States. It was concluded that the majority of wind turbines are located in the states California and Texas, at elevations of peak density closely matching the elevation of Pittsburgh (372.8 m). Further investigation into whether topography, which could influence accessibility of turbines for inspection and maintenance, could play a role in turbine farm location.
+
+An analysis of megawatt production showed Texas has a consistently higher megawatt production than California. 
+
+The windfarm productions are correlated to their geographical regions, as well as the year they became operational.
+
+Retrofitting wind turbines is known to be a way to extend the lifespan and increase energy production of the turbine. From our analyses, we conclude that turbines are commonly retrofitted during a period of energy production decline, and post retrofit energy production does climb back to previously stable levels. However, considering it is well known that physical characteristics such as rotor diameter/sweep area and height are important factors determining turbine energy production, principal component analysis on energy production capacity (t_cap), hub height (t_hh), rotor diameter (t_rd), rotor sweep area (t_rsa), and turbine total height (t_ttlh) did not cluster retrofit very well. We interpret this as retrofitted turbines are not being fitted with new equipment such as larger rotors or hubs that distinguished them from turbines that have not been retrofitted. Instead there may be other factors that better cluster retrofit such as turbine age. Perhaps this indicates that retrofitting is primarily to revive turbines to their newly constructed state rather than attempt to improve upon their original construction, or other variables in the turbine's construction could prevent retrofitting with larger equipment that would allow for increased capacity for energy production from their original construction. 
+
+# Further Reseach 
+
+There are many questions on retrofitted wind turbines that investigating this one variable can expand to its own research project. 
+
+Our data capture the turbines in a single moment of time which makes analyzing pre and post retrofit beyond the monthly energy production difficult. If annual inspection records exist with data on turbines physical characteristics, we would like to compare the same attributes used in our PCA analysis to explicitly investigate the changes after retrofit. With further data on the retrofitted components, we may investigate the monetary cost and energy production return of retrofit, whether it is an investment more wind farms beyond the Midwest/Great Plains and Texas regions should consider to improve their turbine efficiency and lifespan. 
+
+
+# Citations 
+
+*Jossi, Frank. “Industry Report: Midwest and Great Plains Lead Wind Energy Expansion.” Energy News Network, 19 Apr. 2017, https://energynews.us/2017/04/19/industry-report-midwest-and-great-plains-lead-wind-energy-expansion/.*
